@@ -13,7 +13,7 @@
 #define BRAKEGND 3
 
 ////////////////////////////////////////////////////////////////////////////////
-#define pwmMax 255 // or less, if you want to lower the maximum motor's speed
+#define pwmMax 30 // or less, if you want to lower the maximum motor's speed
 
 // defining the range of potentiometer's rotation
 const int potMini=208;
@@ -50,7 +50,8 @@ int DataValueR=512; //middle position 0-1024
 void setup()
 {
   // serial initialization
-  Serial.begin(115200);
+  SerialUSB.begin(12000000);
+  SerialUSB.setTimeout(000.1);
 
   // initialization of Arduino's pins
   pinMode(statpin, OUTPUT); //not explained by Sparkfun
@@ -92,28 +93,37 @@ void loop()
 ////////////////////////////////////////////////////////////////////////////////
 void readSerialData()
 {
+  String recive = "";
   byte Data[3]={
     '0','0','0'          };
   // keep this function short, because the loop has to be short to keep the control over the motors
 
-  if (Serial.available()>2){
-    //parse the buffer : test if the byte is the first of the order "R"
-    Data[0]=Serial.read();
-    if (Data[0]=='L'){
-      Data[1]=Serial.read();
-      Data[2]=Serial.read();
-      //  call the function that converts the hexa in decimal and that maps the range
-      DataValueR=NormalizeData(Data);
-    }
-    if (Data[0]=='R'){
-      Data[1]=Serial.read();
-      Data[2]=Serial.read();
-      //  call the function that converts the hexa in decimal and maps the range
-      DataValueL=NormalizeData(Data);
-
+  if (SerialUSB.available()){
+    recive = SerialUSB.readString();
+    for(int i = 0; i < recive.length() - 2; i++)
+    {
+      Data[0]=recive[i];
+      if (Data[0]=='L'){
+        Data[1]=recive[i+1];
+        Data[2]=recive[i+2];
+        //  call the function that converts the hexa in decimal and that maps the range
+        DataValueR=NormalizeData(Data);
+        for(int j = 0; j < 3; j++) SerialUSB.println(Data[j]);
+      }
+      if (Data[0]=='R'){
+        Data[1]=recive[i+1];
+        Data[2]=recive[i+2];
+        //  call the function that converts the hexa in decimal and maps the range
+        DataValueL=NormalizeData(Data);
+        for(int j = 0; j < 3; j++) SerialUSB.println(Data[j]);
+      }
+      else
+      {
+        i++;
+      }
     }
   }
-  if (Serial.available()>16) Serial.flush();
+  if (SerialUSB.available()>16) SerialUSB.flush();
 }
 ////////////////////////////////////////////////////////
 void motorMotion(int numMot,int actualPos,int targetPos)
@@ -139,12 +149,11 @@ void motorMotion(int numMot,int actualPos,int targetPos)
   }
   else {
     // PID : calculates speed according to distance
-    pwm=195;
-    if (gap>50)   pwm=215;
-    if (gap>75)   pwm=235;   
-    if (gap>100)  pwm=255;
-    pwm=map(pwm, 0, 255, 0, pwmMax);  //adjust the value according to pwmMax for mechanical debugging purpose !
-
+    pwm=15;
+    if (gap>50)   pwm=20;
+    if (gap>75)   pwm=30;   
+    if (gap>100)  pwm=50;
+    pwm=map(pwm, 0, 30, 0, pwmMax);  //adjust the value according to pwmMax for mechanical debugging purpose !
     // if motor is outside from the range, send motor back to the limit !
     // go forward (up)
     if ((actualPos<potMini) || (actualPos<targetPos)) motorGo(numMot, FW, pwm);
@@ -231,9 +240,9 @@ void motorDrive(uint8_t motor, uint8_t direct, uint8_t pwm)
 ////////////////////////////////////////////////////////////////////////////////
 void testPot(){
 
-  Serial.print(analogRead(potL));
-  Serial.print(";");
-  Serial.println(analogRead(potR));
+  SerialUSB.print(analogRead(potL));
+  SerialUSB.print(";");
+  SerialUSB.println(analogRead(potR));
   delay(250);
 
 }
@@ -259,7 +268,7 @@ void testpulse(){
     motorGo(motRight, RV, pw);
     delay(250);       
     motorOff(motRight);     
-    Serial.println("testpulse pwm:80");     
+    SerialUSB.println("testpulse pwm:80");     
     delay(500);
 
   }
@@ -279,7 +288,7 @@ int NormalizeData(byte x[3])
   }
   for (int i=1; i<3; i++)
    {
-    if (x[i]>47 && x[i]<58 ){//for x0 to x9
+      if (x[i]>47 && x[i]<58 ){//for x0 to x9
       x[i]=x[i]-48;
     }                       
       if (x[i]>64 && x[i]<71 ){//for xA to xF
@@ -288,6 +297,7 @@ int NormalizeData(byte x[3])
   }
   // map the range from Xsim (0 <-> 255) to the mechanically authorized range (potMini <-> potMaxi)
   result=map((x[1]*16+x[2]),0,255,potMini,potMaxi);
+  SerialUSB.println(result);
   return result;
 }
  
