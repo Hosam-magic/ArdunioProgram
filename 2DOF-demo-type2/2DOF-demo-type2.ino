@@ -94,8 +94,8 @@ void loop()
 void readSerialData()
 {
   String recive = "";
-  byte Data[3]={
-    '0','0','0'          };
+  byte Data[5]={
+    '0','0','0','0','0'          };
   // keep this function short, because the loop has to be short to keep the control over the motors
 
   if (SerialUSB.available()){
@@ -103,23 +103,23 @@ void readSerialData()
     for(int i = 0; i < recive.length() - 2; i++)
     {
       Data[0]=recive[i];
-      if (Data[0]=='L'){
+      if (Data[0]=='L')
+      {
         Data[1]=recive[i+1];
         Data[2]=recive[i+2];
+        Data[3]=recive[i+3];
+        if (Data[1] == 45) Data[4]=recive[i+4];
         //  call the function that converts the hexa in decimal and that maps the range
         DataValueR=NormalizeData(Data);
-        for(int j = 0; j < 3; j++) SerialUSB.println(Data[j]);
-      }
-      if (Data[0]=='R'){
+      } 
+      else if (Data[0]=='R')
+      {
         Data[1]=recive[i+1];
         Data[2]=recive[i+2];
+        Data[3]=recive[i+3];
+        if (Data[1] == 45) Data[4]=recive[i+4];
         //  call the function that converts the hexa in decimal and maps the range
         DataValueL=NormalizeData(Data);
-        for(int j = 0; j < 3; j++) SerialUSB.println(Data[j]);
-      }
-      else
-      {
-        i++;
       }
     }
   }
@@ -276,27 +276,54 @@ void testpulse(){
 ////////////////////////////////////////////////////////////////////////////////
 // Function: convert Hex to Dec
 ////////////////////////////////////////////////////////////////////////////////
-int NormalizeData(byte x[3])
+int NormalizeData(byte x[5])
 ////////////////////////////////////////////////////////////////////////////////
 {
   int result;
+  int sign = 4;
+  int a = sign - 3;
+  int m = 0;
 
-  if ((x[2]==13) || (x[2]=='R') || (x[2]=='L'))  //only a LSB and Carrier Return or 'L' or 'R' in case of value below 16 (ie one CHAR and not 2)
+  if (x[1] == 45)
   {
-    x[2]=x[1];  //move MSB to LSB
-    x[1]='0';     //clear MSB
+    sign = 5;
   }
-  for (int i=1; i<3; i++)
-   {
-      if (x[i]>47 && x[i]<58 ){//for x0 to x9
-      x[i]=x[i]-48;
-    }                       
-      if (x[i]>64 && x[i]<71 ){//for xA to xF
-      x[i]=(x[i]-65)+10;       
+
+  
+  for (a = sign - 3; a < sign; a++) //MLSB
+  {
+    if ((x[a]==10) || (x[a]==32) || (x[a]==13) || (x[a]=='R') || (x[a]=='L'))
+    {
+      if (a == (sign - 3))
+      {
+        x[a] = '0';
+        x[a+1] = '0';
+        x[a+2] = '0';
+      } else
+      {
+        for(int b = 0; b < a - (sign - 3); b++)
+        {
+          int c = a - b;
+          x[c]=x[c-1];  //move MSB to LSB
+          x[c-1]='0';                  
+        }        
+      }
     }
   }
-  // map the range from Xsim (0 <-> 255) to the mechanically authorized range (potMini <-> potMaxi)
-  result=map((x[1]*16+x[2]),0,255,potMini,potMaxi);
+  
+  for (a = sign - 3; a < sign; a++)
+  {
+    if (x[a]>47 && x[a]<58 )//for x0 to x9
+    {
+      x[a]=x[a]-48;
+    }
+  }
+  a = sign - 3;
+  m = (x[a]*10*10+x[a+1]*10+x[a+2]);
+  if(m > 100)  m = 100;
+  result=map(m,0,100,((potMaxi+potMini)/2),potMaxi);
+  if(sign == 5) result = ((potMaxi+potMini)/2) - (result-((potMaxi+potMini)/2)-1);
+  SerialUSB.println(m);
   SerialUSB.println(result);
   return result;
 }
