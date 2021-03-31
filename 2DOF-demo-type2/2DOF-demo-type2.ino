@@ -43,7 +43,7 @@ int statpin = 13;  //not explained by Sparkfun
 /* init position value*/
 int DataValueL=512; //middle position 0-1024
 int DataValueR=512; //middle position 0-1024
-
+int sensorL,sensorR;
 ////////////////////////////////////////////////////////////////////////////////
 // INITIALIZATION
 ////////////////////////////////////////////////////////////////////////////////
@@ -75,8 +75,6 @@ void setup()
 ////////////////////////////////////////////////////////////////////////////////
 void loop()
 {
-  int sensorL,sensorR;
-
   readSerialData();   // DataValueR & L contain the last order received
   // (if there is no newer received, the last is kept)
   // the previous order will still be used by the PID regulation MotorMotion
@@ -84,6 +82,7 @@ void loop()
 
   sensorR = analogRead(potR);  // range 0-1024
   sensorL = analogRead(potL);  // range 0-1024
+
 
   motorMotion(motRight,sensorR,DataValueR);
   motorMotion(motLeft,sensorL,DataValueL);
@@ -154,6 +153,27 @@ void motorMotion(int numMot,int actualPos,int targetPos)
     if (gap>75)   pwm=30;   
     if (gap>100)  pwm=50;
     pwm=map(pwm, 0, 30, 0, pwmMax);  //adjust the value according to pwmMax for mechanical debugging purpose !
+
+    SerialUSB.print("L:");
+    SerialUSB.print(sensorR);
+    SerialUSB.print(" ; ");
+    SerialUSB.print(DataValueR);
+    if(numMot == 0)
+    {
+      SerialUSB.print(" ; ");
+      SerialUSB.print(pwm);
+    }
+    SerialUSB.print(" ; ");
+    SerialUSB.print("R: ");
+    SerialUSB.print(sensorL);
+    SerialUSB.print(" ; ");
+    SerialUSB.print(DataValueL);
+    if(numMot == 1)
+    {
+      SerialUSB.print(" ; ");
+      SerialUSB.print(pwm);
+    }
+    SerialUSB.println("");
     // if motor is outside from the range, send motor back to the limit !
     // go forward (up)
     if ((actualPos<potMini) || (actualPos<targetPos)) motorGo(numMot, FW, pwm);
@@ -323,8 +343,6 @@ int NormalizeData(byte x[5])
   if(m > 100)  m = 100;
   result=map(m,0,100,((potMaxi+potMini)/2),potMaxi);
   if(sign == 5) result = ((potMaxi+potMini)/2) - (result-((potMaxi+potMini)/2)-1);
-  SerialUSB.println(m);
-  SerialUSB.println(result);
   return result;
 }
  
