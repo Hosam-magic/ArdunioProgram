@@ -1,4 +1,4 @@
-/*   
+/*  Arduino Leonardo  *
  Arduino code for dynamic playseat 2DOF
  Created 24 May 2011 by Jim Lindblom   SparkFun Electronics https://www.sparkfun.com/products/10182 "Example Code"
  Created 24 Apr 2012 by Jean David SEDRUE Version betatest26 - 24042012 http://www.gamoover.net/Forums/index.php?topic=25907
@@ -6,6 +6,10 @@
  Updated 30 April 2014 by RacingMat (bug for value below 16 corrected)
  */
 
+
+////////////////////////////////////////////////////////////////////////////////
+//  定義參數
+////////////////////////////////////////////////////////////////////////////////
 #define BRAKEVCC 0
 #define RV  2 //beware it's depending on your hardware wiring
 #define FW  1 //beware it's depending on your hardware wiring
@@ -25,9 +29,6 @@ const int potMaxi=815;
 #define potL A0
 #define potR A1
 
-////////////////////////////////////////////////////////////////////////////////
-//  DECLARATIONS
-////////////////////////////////////////////////////////////////////////////////
 /*  VNH2SP30 pin definitions*/
 int inApin[2] = {
   7, 4};  // INA: Clockwise input
@@ -44,8 +45,10 @@ int statpin = 13;  //not explained by Sparkfun
 int DataValueL=512; //middle position 0-1024
 int DataValueR=512; //middle position 0-1024
 int sensorL,sensorR;
+/*----------------------------------------------------------------------------*/
+
 ////////////////////////////////////////////////////////////////////////////////
-// INITIALIZATION
+// 初始化
 ////////////////////////////////////////////////////////////////////////////////
 void setup()
 {
@@ -77,9 +80,13 @@ void setup()
   digitalWrite(2, HIGH);
   pinMode(2, OUTPUT);
 }
+/*----------------------------------------------------------------------------*/
+
+
+
+
 ////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////// Main Loop ////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////// 主迴圈 ////////////////////////////////////////
 void loop()
 {
   String S;
@@ -112,6 +119,8 @@ void loop()
   S += "\tDataValueR: " + String(DataValueR) + "\tDataValueL: " + String(DataValueL) + "\tM1-1: " + String(val2) + " M1-2: " + String(val3) +" M2-1: " + String(val4) + " M2-2: " + String(val) + " M1-PWM: " + String(val5) + "\tM2-PWM: " + String(val6) + "\tM1-pos: " + String(val7) + "\tM2-pos: " + String(val8);
   SerialUSB.println(S);
 }
+/*----------------------------------------------------------------------------*/
+
 ////////////////////////////////////////////////////////////////////////////////
 // Procedure: wait for complete trame
 ////////////////////////////////////////////////////////////////////////////////
@@ -157,9 +166,10 @@ String readSerialData()
   if (SerialUSB.available()>16) SerialUSB.flush();  
   return recive;
 }
+//----------------------------------------------------------------------------//
+
 ////////////////////////////////////////////////////////
 void motorMotion(int numMot,int actualPos,int targetPos)
-////////////////////////////////////////////////////////
 {
   int Tol=20; // no order to move will be sent to the motor if the target
   // is close to the actual position
@@ -195,27 +205,35 @@ void motorMotion(int numMot,int actualPos,int targetPos)
 
   }
 }
-
+//----------------------------------------------------//
 
 
 ////////////////////////////////////////////////////////////////////////////////
-void motorOff(int motor){ //Brake Ground : free wheel actually
-  ////////////////////////////////////////////////////////////////////////////////
+// Brake Ground : free wheel actually  
+////////////////////////////////////////////////////////////////////////////////
+void motorOff(int motor)
+{ 
   digitalWrite(inApin[motor], LOW);
   digitalWrite(inBpin[motor], LOW);
   analogWrite(pwmpin[motor], 0);
 }
+//----------------------------------------------------------------------------//
+
 ////////////////////////////////////////////////////////////////////////////////
-void motorOffBraked(int motor){ // "brake VCC" : short-circuit inducing electromagnetic brake
-  ////////////////////////////////////////////////////////////////////////////////
+// "brake VCC" : short-circuit inducing electromagnetic brake
+////////////////////////////////////////////////////////////////////////////////
+void motorOffBraked(int motor) 
+{  
   digitalWrite(inApin[motor], HIGH);
   digitalWrite(inBpin[motor], HIGH);
   analogWrite(pwmpin[motor], 0);
 }
+//----------------------------------------------------------------------------//
 
 ////////////////////////////////////////////////////////////////////////////////
-void motorGo(uint8_t motor, uint8_t direct, uint8_t pwm)
+//
 ////////////////////////////////////////////////////////////////////////////////
+void motorGo(uint8_t motor, uint8_t direct, uint8_t pwm)
 {
   if (motor <= 1)
   {
@@ -238,10 +256,12 @@ void motorGo(uint8_t motor, uint8_t direct, uint8_t pwm)
     }
   }
 }
+//----------------------------------------------------------------------------//
 
 ////////////////////////////////////////////////////////////////////////////////
-void motorDrive(uint8_t motor, uint8_t direct, uint8_t pwm)
+//
 ////////////////////////////////////////////////////////////////////////////////
+void motorDrive(uint8_t motor, uint8_t direct, uint8_t pwm)
 {
   // more readable function than Jim's (for educational purpose)
   // but 50 octets heavier ->  unused
@@ -268,12 +288,12 @@ void motorDrive(uint8_t motor, uint8_t direct, uint8_t pwm)
     analogWrite(pwmpin[motor], pwm);
   }
 }
+//----------------------------------------------------------------------------//
 
 ////////////////////////////////////////////////////////////////////////////////
 // Function: convert Hex to Dec
 ////////////////////////////////////////////////////////////////////////////////
 int NormalizeData(byte x[5])
-////////////////////////////////////////////////////////////////////////////////
 {
   int result;
   int sign = 4;
@@ -321,4 +341,4 @@ int NormalizeData(byte x[5])
   if(sign == 5) result = ((potMaxi+potMini)/2) - (result-((potMaxi+potMini)/2)-1);
   return result;
 }
- 
+//----------------------------------------------------------------------------//
