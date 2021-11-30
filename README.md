@@ -7,5 +7,5 @@
     
 2.設定黨為以下
 
-  (1) arduino.json (arduino裝置連線設定)
-  (2) c_cpp_properties.json (arduino專用的基本涵式庫引用)
+    (1) arduino.json (arduino裝置連線設定)
+    (2) c_cpp_properties.json (arduino專用的基本涵式庫引用)
