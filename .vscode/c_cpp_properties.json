@@ -2,7 +2,7 @@
     "configurations": [
         {
             "name": "Win32",
-
+            //請自行注意Arduino原編譯器安裝位置!
             //Arduino 函式庫匯入
             "includePath": [
                 "C:\\Program Files (x86)\\Arduino\\tools\\**",

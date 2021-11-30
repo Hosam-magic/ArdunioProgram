@@ -1,3 +1,6 @@
 {
+    "board": "arduino:avr:leonardo",
+    "port": "COM5",
+    "programmer": "arduino:avrispmkii",
     "sketch": "Arduino Leonardo\\2DOF-demo-type2\\2DOF-demo-type2.ino"
 }
