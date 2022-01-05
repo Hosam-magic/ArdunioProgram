@@ -20,8 +20,8 @@
 #define pwmMax 30 // or less, if you want to lower the maximum motor's speed
 
 // defining the range of potentiometer's rotation
-const float potMini=-85; //208
-const float potMaxi=85; //815
+const float potMini=-75; //208
+const float potMaxi=75; //815
 
 ////////////////////////////////////////////////////////////////////////////////
 //左:0 右:1
@@ -47,10 +47,11 @@ float TargetHightL=0; //中間位置0 目標高度 -R~R
 float TargetHightR=0; //中間位置0 目標高度 -R~R
 int sensorL,sensorR;
 
-int pwm = 0; //PWM
+int pwm = 0; //PWM訊號值0~255
+int startMotorVoltage = 50;//馬達啟動電壓(PWM)
 float R = 10; //轉動連桿半徑(CM)
 float RmaxD = 300; //電阻極限角度
-float gap = 0;  //容許定位公差
+float gotoTargetGap = 0;  //容許定位公差
 /*----------------------------------------------------------------------------*/
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -109,10 +110,7 @@ void loop()
 
   motorMotion(motLeft, ResisToDegree(sensorL) - 150, compensator_Target(TargetHightL));
   int pwmL = pwm; //實驗性檢測******
-  motorMotion(motRight, ResisToDegree(sensorR) - 150, compensator_Target(TargetHightR));
-  int pwmR = pwm; //實驗性檢測******
   
-
 //實驗性檢測******
   int val = digitalRead(13);
   int val2 = digitalRead(12);
@@ -133,12 +131,15 @@ void loop()
   S +=  "\t高度(左): " + String(TargetHightL) +
         "\t角度(左): " + String(targetL) + "°" + 
         "\t感測器(左): " + String(degreeL) + "°" + 
-        "\t gap: " + String(gap) + "°" + 
+        "\t gap: " + String(gotoTargetGap) + "°" + 
         "\t馬達(左)-A: " + String(val) + 
         "\t馬達(左)-B: " + String(val2) + 
-        "\t馬達(左)-PWM: " + String(pwmL); 
+        "\t馬達(左)-PWM: " + String(pwmL);
   SerialUSB.println(S);
 //
+
+  motorMotion(motRight, ResisToDegree(sensorR) - 150, compensator_Target(TargetHightR));
+  int pwmR = pwm; //實驗性檢測******
 }
 /*----------------------------------------------------------------------------*/
 
@@ -202,31 +203,58 @@ String readSerialData()
 ////////////////////////////////////////////////////////
 void motorMotion(int numMot,float actualPos,float targetPos)
 {
-  float Tol = 6; 
-  //float gap;  
-  float brakingDistance = 8;
+  float Tol = 4;
+  float percentVelocity = 0; //速度百分比
+  float brakingDistance = 5;
 
   // 分析目標位置是否超出極限，若超出則限制
   targetPos = constrain(targetPos, potMini + brakingDistance, potMaxi - brakingDistance);
 
-  if (numMot == 0) gap=abs(targetPos-actualPos);
+  actualPos = constrain(actualPos, potMini, potMaxi);  //限制角度值
+  targetPos = constrain(targetPos, potMini, potMaxi);  //限制角度值
 
-  if (gap<= Tol) {
-    motorOff(numMot); //too near to move
-    pwm = 0; 
+  gotoTargetGap = abs(targetPos-actualPos);   //計算距離值
+
+  if (gotoTargetGap<= Tol) {
+    motorOff(numMot); //太近，必須停下
+    percentVelocity = 0;
+    pwm = 0;
   }
   else {
-    // PID : calculates speed according to distance
-    pwm=20;
-    if (gap>15)   pwm=127;
-    if (gap>22)   pwm=180;   
-    if (gap>30)   pwm=255;
-    pwm=map(pwm, 0, 30, 0, pwmMax);  //adjust the value according to pwmMax for mechanical debugging purpose !
+    ///////////////
+    // PID加減速
+    ///////////////
+    percentVelocity=1;
+    if (gotoTargetGap>6)   percentVelocity=25;
+    if (gotoTargetGap>8)   percentVelocity=50;
+    if (gotoTargetGap>9)   percentVelocity=75;
+    if (gotoTargetGap>10)   percentVelocity=100;
 
-    // if motor is outside from the range, send motor back to the limit !
-    // go forward (up)
+    ///////////////
+    //速度補償
+    ///////////////
+    if (actualPos != 0) 
+      percentVelocity = percentVelocity / abs(1/sin((actualPos*PI/180))); 
+    else  //0度時不為0
+      percentVelocity = percentVelocity / 100;
+
+    ///////////////
+    //限制PWM輸入值
+    ///////////////
+    pwm = map((percentVelocity*1000), 0, 100000, startMotorVoltage-1, 263);  //pwm比例縮放補足馬達啟動電壓 & 去除75度後之值(263是由試誤法得出)
+
+    if(pwm != 0)
+      pwm = constrain(pwm, startMotorVoltage-1, 255);  
+    else
+      pwm = constrain(pwm, 0, 255);  //限制PWM輸入值
+
+    ///////////////
+    //馬達執行動作
+    ///////////////
+    //馬達超出極限範圍，將會反向調控!
+    // 正轉(上)
     if ((actualPos<potMini) || (actualPos<targetPos)) motorGo(numMot, FW, pwm);
-    // go reverse (down)   
+    // 反轉(下) 
     if ((actualPos>potMaxi) || (actualPos>targetPos)) motorGo(numMot, RV, pwm);
 
   }
@@ -285,7 +313,7 @@ void motorGo(uint8_t motor, uint8_t direct, uint8_t pwm)
 //----------------------------------------------------------------------------//
 
 ////////////////////////////////////////////////////////////////////////////////
-//
+// 控制馬達IO
 ////////////////////////////////////////////////////////////////////////////////
 void motorDrive(uint8_t motor, uint8_t direct, uint8_t pwm)
 {
@@ -314,61 +342,6 @@ void motorDrive(uint8_t motor, uint8_t direct, uint8_t pwm)
     analogWrite(pwmpin[motor], pwm);
   }
 }
-//----------------------------------------------------------------------------//
-
-////////////////////////////////////////////////////////////////////////////////
-// Function: convert Hex to Dec
-////////////////////////////////////////////////////////////////////////////////
-/*
-float NormalizeData(byte x[5])
-{
-  float result;
-  int sign = 4;
-  int a = sign - 3;
-  int m = 0;
-
-  if (x[1] == 45)
-  {
-    sign = 5;
-  }
-
-  
-  for (a = sign - 3; a < sign; a++) //MLSB
-  {
-    if ((x[a]==10) || (x[a]==32) || (x[a]==13) || (x[a]=='R') || (x[a]=='L'))
-    {
-      if (a == (sign - 3))
-      {
-        x[a] = '0'; 
-        x[a+1] = '0'; 
-        x[a+2] = '0'; 
-      } else
-      {
-        for(int b = 0; b < a - (sign - 3); b++)
-        {
-          int c = a - b; 
-          x[c]=x[c-1];  //move MSB to LSB
-          x[c-1]='0'; 
-        }        
-      }
-    }
-  }
-  
-  for (a = sign - 3; a < sign; a++)
-  {
-    if (x[a]>47 && x[a]<58 )//for x0 to x9
-    {
-      x[a]=x[a]-48;
-    }
-  }
-  a = sign - 3;
-  m = (x[a]*10*10+x[a+1]*10+x[a+2]);
-  if(m > 100)  m = 100;
-  result=map(m,0,100,((potMaxi+potMini)/2),potMaxi);
-  if(sign == 5) result = ((potMaxi+potMini)/2) - (result-((potMaxi+potMini)/2)-1);
-  return result;
-}
-*/
 //----------------------------------------------------------------------------//
 
 ////////////////////////////////////////////////////////////////////////////////
