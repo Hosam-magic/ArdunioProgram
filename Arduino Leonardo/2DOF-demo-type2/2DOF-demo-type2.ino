@@ -231,17 +231,19 @@ void motorMotion(int numMot,float actualPos,float targetPos)
     if (gotoTargetGap>10)   percentVelocity=100;
 
     ///////////////
-    //速度補償
+    //沒有速度補償
     ///////////////
+    /*
     if (actualPos != 0) 
       percentVelocity = percentVelocity / abs(1/sin((actualPos*PI/180))); 
     else  //0度時不為0
       percentVelocity = percentVelocity / 100;
+    */
 
     ///////////////
     //限制PWM輸入值
     ///////////////
-    pwm = map((percentVelocity*1000), 0, 100000, startMotorVoltage-1, 263);  //pwm比例縮放補足馬達啟動電壓 & 去除75度後之值(263是由試誤法得出)
+    pwm = map((percentVelocity*1000), 0, 100000, startMotorVoltage-1, 255);  //pwm比例縮放補足馬達啟動電壓 & 去除75度後之值(263是由試誤法得出)
 
     if(pwm != 0)
       pwm = constrain(pwm, startMotorVoltage-1, 255);  
