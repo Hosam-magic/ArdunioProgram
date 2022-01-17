@@ -20,10 +20,11 @@
 #define pwmMax 30 // or less, if you want to lower the maximum motor's speed
 
 // defining the range of potentiometer's rotation
-const int potMini=208;
-const int potMaxi=815;
+const float potMini=-75; //208
+const float potMaxi=75; //815
 
 ////////////////////////////////////////////////////////////////////////////////
+//左:0 右:1
 #define motLeft 0
 #define motRight 1
 #define potL A0
@@ -42,9 +43,15 @@ int enpin[2] = {
   0, 1}; // EN: Status of switches output (Analog pin)
 int statpin = 13;  //not explained by Sparkfun
 /* init position value*/
-int DataValueL=512; //middle position 0-1024
-int DataValueR=512; //middle position 0-1024
+float TargetHightL=0; //中間位置0 目標高度 -R~R
+float TargetHightR=0; //中間位置0 目標高度 -R~R
 int sensorL,sensorR;
+
+int pwm = 0; //PWM訊號值0~255
+int startMotorVoltage = 50;//馬達啟動電壓(PWM)
+float R = 10; //轉動連桿半徑(CM)
+float RmaxD = 300; //電阻極限角度
+float gotoTargetGap = 0;  //容許定位公差
 /*----------------------------------------------------------------------------*/
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,7 +61,7 @@ void setup()
 {
   // serial initialization
   SerialUSB.begin(12000000);
-  SerialUSB.setTimeout(000.1);
+  SerialUSB.setTimeout(0.01);
 
   // initialization of Arduino's pins
   pinMode(statpin, OUTPUT); //not explained by Sparkfun
@@ -72,6 +79,13 @@ void setup()
     digitalWrite(inApin[i], LOW);
     digitalWrite(inBpin[i], LOW);
   }
+
+  pinMode(13, INPUT);
+  pinMode(12, INPUT);
+  pinMode(11, INPUT);
+  pinMode(3, INPUT);
+  digitalWrite(2, HIGH);
+  pinMode(2, OUTPUT);
 }
 /*----------------------------------------------------------------------------*/
 
@@ -82,7 +96,11 @@ void setup()
 ///////////////////////////////// 主迴圈 ////////////////////////////////////////
 void loop()
 {
-  readSerialData();   // DataValueR & L contain the last order received
+  String S; //實驗性檢測******
+  S = "*recive: " +  //實驗性檢測******
+  readSerialData(); //讀取&解析USB通訊 
+
+  // DataValueR & L contain the last order received
   // (if there is no newer received, the last is kept)
   // the previous order will still be used by the PID regulation MotorMotion
   // Function
@@ -90,106 +108,153 @@ void loop()
   sensorR = analogRead(potR);  // range 0-1024
   sensorL = analogRead(potL);  // range 0-1024
 
+  motorMotion(motLeft, ResisToDegree(sensorL) - 150, compensator_Target(TargetHightL));
+  int pwmL = pwm; //實驗性檢測******
+  
+//實驗性檢測******
+  int val = digitalRead(13);
+  int val2 = digitalRead(12);
+  int val3 = digitalRead(11);
+  int val4 = digitalRead(2);
 
-  motorMotion(motRight,sensorR,DataValueR);
-  motorMotion(motLeft,sensorL,DataValueL);
+  int val5 = analogRead(A3);
+  int val6 = analogRead(A2);
+  int val7 = analogRead(A0);
+  int val8 = analogRead(A1);
+
+  float degreeR = ResisToDegree(sensorR) - 150;  
+  float degreeL = ResisToDegree(sensorL) - 150;
+  float targetR = compensator_Target(TargetHightR);
+  float targetL = compensator_Target(TargetHightL);
+
+ 
+  S +=  "\t高度(左): " + String(TargetHightL) +
+        "\t角度(左): " + String(targetL) + "°" + 
+        "\t感測器(左): " + String(degreeL) + "°" + 
+        "\t gap: " + String(gotoTargetGap) + "°" + 
+        "\t馬達(左)-A: " + String(val) + 
+        "\t馬達(左)-B: " + String(val2) + 
+        "\t馬達(左)-PWM: " + String(pwmL);
+  SerialUSB.println(S);
+//
+
+  motorMotion(motRight, ResisToDegree(sensorR) - 150, compensator_Target(TargetHightR));
+  int pwmR = pwm; //實驗性檢測******
 }
 /*----------------------------------------------------------------------------*/
 
-
-
 ////////////////////////////////////////////////////////////////////////////////
-// Procedure: wait for complete trame
+// 分析USB指令碼
 ////////////////////////////////////////////////////////////////////////////////
-void readSerialData()
+String readSerialData()
 {
   String recive = "";
-  byte Data[5]={
-    '0','0','0','0','0'          };
-  // keep this function short, because the loop has to be short to keep the control over the motors
-
-  if (SerialUSB.available()){
-    recive = SerialUSB.readString();
-    for(int i = 0; i < recive.length() - 2; i++)
+  String RightValue = "";
+  String LeftValue = "";
+  
+  if (SerialUSB.available())
+  {
+    recive = SerialUSB.readString();    
+    if(recive == "RESET\r\n")
     {
-      Data[0]=recive[i];
-      if (Data[0]=='L')
-      {
-        Data[1]=recive[i+1];
-        Data[2]=recive[i+2];
-        Data[3]=recive[i+3];
-        if (Data[1] == 45) Data[4]=recive[i+4];
-        //  call the function that converts the hexa in decimal and that maps the range
-        DataValueR=NormalizeData(Data);
-      } 
-      else if (Data[0]=='R')
-      {
-        Data[1]=recive[i+1];
-        Data[2]=recive[i+2];
-        Data[3]=recive[i+3];
-        if (Data[1] == 45) Data[4]=recive[i+4];
-        //  call the function that converts the hexa in decimal and maps the range
-        DataValueL=NormalizeData(Data);
-      }
+      digitalWrite(2, LOW);
     }
-  }
-  if (SerialUSB.available()>16) SerialUSB.flush();
+    else 
+    {
+      if(recive.indexOf("Right") != -1) //有沒有Right參數
+      {
+        int Rword = recive.indexOf("Right");
+        if(recive[Rword+5] == '=') //檢查關鍵字後面是否有 '='
+        {
+          RightValue = recive.substring(Rword+6, recive.indexOf("&", Rword));
+
+          if(StrIsNumber(RightValue))
+          {
+            TargetHightR=RightValue.toFloat(); //改寫目標高度(右)
+          }
+
+        }
+      }
+      
+      if(recive.indexOf("Left") != -1) //有沒有Left參數
+      {
+        int Lword = recive.indexOf("Left");
+        if(recive[Lword+4] == '=') //檢查關鍵字後面是否有 '='
+        {
+          LeftValue = recive.substring(Lword+5, recive.indexOf("&", Lword));
+          
+          if(StrIsNumber(LeftValue))
+          {
+            TargetHightL=LeftValue.toFloat(); //改寫目標高度(左)
+          }    
+
+        }
+      }   
+    } 
+  }  
+  if (SerialUSB.available()>16) SerialUSB.flush(); //清USB暫存
+  return recive;
 }
 //----------------------------------------------------------------------------//
 
 ////////////////////////////////////////////////////////
-void motorMotion(int numMot,int actualPos,int targetPos)
+// 確定馬達方向&速度
+// >>已轉為角度計算!
+////////////////////////////////////////////////////////
+void motorMotion(int numMot,float actualPos,float targetPos)
 {
-  int Tol=20; // no order to move will be sent to the motor if the target
-  // is close to the actual position
-  // this prevents short jittering moves
-  //could be a parameter read from a pot on an analogic pin
-  // the highest value, the calmest the simulator would be (less moves)
+  float Tol = 4;
+  float percentVelocity = 0; //速度百分比
+  float brakingDistance = 5;
 
-  int gap;
-  int pwm;
-  int brakingDistance=30;
+  // 分析目標位置是否超出極限，若超出則限制
+  targetPos = constrain(targetPos, potMini + brakingDistance, potMaxi - brakingDistance);
 
-  // security concern : targetPos has to be within the mechanically authorized range
-  targetPos=constrain(targetPos,potMini+brakingDistance,potMaxi-brakingDistance);
+  actualPos = constrain(actualPos, potMini, potMaxi);  //限制角度值
+  targetPos = constrain(targetPos, potMini, potMaxi);  //限制角度值
 
-  gap=abs(targetPos-actualPos);
+  gotoTargetGap = abs(targetPos-actualPos);   //計算距離值
 
-  if (gap<= Tol) {
-    motorOff(numMot); //too near to move     
+  if (gotoTargetGap<= Tol) {
+    motorOff(numMot); //太近，必須停下
+    percentVelocity = 0;
+    pwm = 0;
   }
   else {
-    // PID : calculates speed according to distance
-    pwm=15;
-    if (gap>50)   pwm=20;
-    if (gap>75)   pwm=30;   
-    if (gap>100)  pwm=50;
-    pwm=map(pwm, 0, 30, 0, pwmMax);  //adjust the value according to pwmMax for mechanical debugging purpose !
+    ///////////////
+    // PID加減速
+    ///////////////
+    percentVelocity=1;
+    if (gotoTargetGap>6)   percentVelocity=25;
+    if (gotoTargetGap>8)   percentVelocity=50;
+    if (gotoTargetGap>9)   percentVelocity=75;
+    if (gotoTargetGap>10)   percentVelocity=100;
 
-    SerialUSB.print("L:");
-    SerialUSB.print(sensorR);
-    SerialUSB.print(" ; ");
-    SerialUSB.print(DataValueR);
-    if(numMot == 0)
-    {
-      SerialUSB.print(" ; ");
-      SerialUSB.print(pwm);
-    }
-    SerialUSB.print(" ; ");
-    SerialUSB.print("R: ");
-    SerialUSB.print(sensorL);
-    SerialUSB.print(" ; ");
-    SerialUSB.print(DataValueL);
-    if(numMot == 1)
-    {
-      SerialUSB.print(" ; ");
-      SerialUSB.print(pwm);
-    }
-    SerialUSB.println("");
-    // if motor is outside from the range, send motor back to the limit !
-    // go forward (up)
+    ///////////////
+    //速度補償
+    ///////////////
+    if (actualPos != 0) 
+      percentVelocity = percentVelocity / abs(1/sin((actualPos*PI/180))); 
+    else  //0度時不為0
+      percentVelocity = percentVelocity / 100;
+
+    ///////////////
+    //限制PWM輸入值
+    ///////////////
+    pwm = map((percentVelocity*1000), 0, 100000, startMotorVoltage-1, 263);  //pwm比例縮放補足馬達啟動電壓 & 去除75度後之值(263是由試誤法得出)
+
+    if(pwm != 0)
+      pwm = constrain(pwm, startMotorVoltage-1, 255);  
+    else
+      pwm = constrain(pwm, 0, 255);  //限制PWM輸入值
+
+    ///////////////
+    //馬達執行動作
+    ///////////////
+    //馬達超出極限範圍，將會反向調控!
+    // 正轉(上)
     if ((actualPos<potMini) || (actualPos<targetPos)) motorGo(numMot, FW, pwm);
-    // go reverse (down)   
+    // 反轉(下) 
     if ((actualPos>potMaxi) || (actualPos>targetPos)) motorGo(numMot, RV, pwm);
 
   }
@@ -198,10 +263,10 @@ void motorMotion(int numMot,int actualPos,int targetPos)
 
 
 ////////////////////////////////////////////////////////////////////////////////
-//Brake Ground : free wheel actually
+// Brake Ground : free wheel actually  
 ////////////////////////////////////////////////////////////////////////////////
 void motorOff(int motor)
-{   
+{ 
   digitalWrite(inApin[motor], LOW);
   digitalWrite(inBpin[motor], LOW);
   analogWrite(pwmpin[motor], 0);
@@ -211,7 +276,7 @@ void motorOff(int motor)
 ////////////////////////////////////////////////////////////////////////////////
 // "brake VCC" : short-circuit inducing electromagnetic brake
 ////////////////////////////////////////////////////////////////////////////////
-void motorOffBraked(int motor)
+void motorOffBraked(int motor) 
 {  
   digitalWrite(inApin[motor], HIGH);
   digitalWrite(inBpin[motor], HIGH);
@@ -220,7 +285,7 @@ void motorOffBraked(int motor)
 //----------------------------------------------------------------------------//
 
 ////////////////////////////////////////////////////////////////////////////////
-//
+// 啟動馬達
 ////////////////////////////////////////////////////////////////////////////////
 void motorGo(uint8_t motor, uint8_t direct, uint8_t pwm)
 {
@@ -248,7 +313,7 @@ void motorGo(uint8_t motor, uint8_t direct, uint8_t pwm)
 //----------------------------------------------------------------------------//
 
 ////////////////////////////////////////////////////////////////////////////////
-//
+// 控制馬達IO
 ////////////////////////////////////////////////////////////////////////////////
 void motorDrive(uint8_t motor, uint8_t direct, uint8_t pwm)
 {
@@ -280,94 +345,71 @@ void motorDrive(uint8_t motor, uint8_t direct, uint8_t pwm)
 //----------------------------------------------------------------------------//
 
 ////////////////////////////////////////////////////////////////////////////////
-// 測試方法
+// 2DOF圓周補償(高度轉角度)
 ////////////////////////////////////////////////////////////////////////////////
-void testPot(){
+float compensator_Target(float target)
+{
+  float ans = 0;
+  //target -= R; //判定中間值為零點
+  if (R >= abs(target)) ans = asin(target / R) * 180 / PI;
 
-  SerialUSB.print(analogRead(potL));
-  SerialUSB.print(";");
-  SerialUSB.println(analogRead(potR));
-  delay(250);
-
-}
-
-void testpulse(){
-  int pw=120;
-  while (true){
-
-    motorGo(motLeft, FW, pw);
-    delay(250);       
-    motorOff(motLeft);
-    delay(250);       
-    motorGo(motLeft, RV, pw);
-    delay(250);       
-    motorOff(motLeft);     
-
-    delay(500);       
-
-    motorGo(motRight, FW, pw);
-    delay(250);       
-    motorOff(motRight);
-    delay(250);       
-    motorGo(motRight, RV, pw);
-    delay(250);       
-    motorOff(motRight);     
-    SerialUSB.println("testpulse pwm:80");     
-    delay(500);
-
-  }
+  return ans;
 }
 //----------------------------------------------------------------------------//
 
 ////////////////////////////////////////////////////////////////////////////////
-// Function: convert Hex to Dec
+// 電阻訊號轉電阻角度
 ////////////////////////////////////////////////////////////////////////////////
-int NormalizeData(byte x[5])
+float ResisToDegree (int Vol)
 {
-  int result;
-  int sign = 4;
-  int a = sign - 3;
-  int m = 0;
+  float ans = 0;  
+  ans = float(Vol) * RmaxD / 1024;
+  return ans;
+}
 
-  if (x[1] == 45)
-  {
-    sign = 5;
-  }
+////////////////////////////////////////////////////////////////////////////////
+// 電阻角度轉電阻訊號
+////////////////////////////////////////////////////////////////////////////////
+int DegreeToResis (float Deg)
+{
+  float ans = 0;  
+  ans = float(Deg) * 1024 / RmaxD;
+  return int(ans);
+}
 
-  
-  for (a = sign - 3; a < sign; a++) //MLSB
+////////////////////////////////////////////////////////////////////////////////
+// 檢查字串是否為數字(含小數可)
+////////////////////////////////////////////////////////////////////////////////
+boolean StrIsNumber(String str) 
+{
+  if(str.length()) //內容判斷
   {
-    if ((x[a]==10) || (x[a]==32) || (x[a]==13) || (x[a]=='R') || (x[a]=='L'))
-    {
-      if (a == (sign - 3))
+    int dot = 0;
+    int nev = 0;
+
+    for(char i = 0; i < str.length(); i++) //掃描全部字元
+    {      
+      if ( !(isDigit(str.charAt(i)) || str.charAt(i) == '.' || str.charAt(i) == '-' )) //判定是否為數字
       {
-        x[a] = '0';
-        x[a+1] = '0';
-        x[a+2] = '0';
-      } else
+        return false;
+      }
+
+      if(str.charAt(i) == '.') //檢查是否重複小數點
       {
-        for(int b = 0; b < a - (sign - 3); b++)
-        {
-          int c = a - b;
-          x[c]=x[c-1];  //move MSB to LSB
-          x[c-1]='0';                  
-        }        
+        dot++;
+        if(dot > 1) return false;
+      }
+
+      if(str.charAt(i) == '-') //檢查是否重複小數點
+      {
+        nev++;
+        if(nev > 1) return false;
       }
     }
+    return true;
   }
-  
-  for (a = sign - 3; a < sign; a++)
+  else
   {
-    if (x[a]>47 && x[a]<58 )//for x0 to x9
-    {
-      x[a]=x[a]-48;
-    }
+    return false;
   }
-  a = sign - 3;
-  m = (x[a]*10*10+x[a+1]*10+x[a+2]);
-  if(m > 100)  m = 100;
-  result=map(m,0,100,((potMaxi+potMini)/2),potMaxi);
-  if(sign == 5) result = ((potMaxi+potMini)/2) - (result-((potMaxi+potMini)/2)-1);
-  return result;
 }
-//----------------------------------------------------------------------------//

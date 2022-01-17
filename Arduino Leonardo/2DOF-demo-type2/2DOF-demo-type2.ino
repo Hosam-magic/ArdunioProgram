@@ -61,7 +61,7 @@ void setup()
 {
   // serial initialization
   SerialUSB.begin(12000000);
-  SerialUSB.setTimeout(000.1);
+  SerialUSB.setTimeout(0.1);
 
   // initialization of Arduino's pins
   pinMode(statpin, OUTPUT); //not explained by Sparkfun
