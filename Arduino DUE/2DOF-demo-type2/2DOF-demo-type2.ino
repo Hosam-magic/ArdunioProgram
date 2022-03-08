@@ -20,8 +20,8 @@
 #define pwmMax 30 // or less, if you want to lower the maximum motor's speed
 
 // defining the range of potentiometer's rotation
-const float potMini=-75; //208
-const float potMaxi=75; //815
+const float potMaxi=90; //815
+const float potMini=-90; //208
 
 ////////////////////////////////////////////////////////////////////////////////
 //左:0 右:1
@@ -48,8 +48,8 @@ float TargetHightR=0; //中間位置0 目標高度 -R~R
 int sensorL,sensorR;
 
 int pwm = 0; //PWM訊號值0~255
-int startMotorVoltage = 50;//馬達啟動電壓(PWM)
-float R = 10; //轉動連桿半徑(CM)
+float startMotorVoltage = 75;//馬達啟動電壓(百分比)
+float R = 6; //轉動連桿半徑(CM)
 float RmaxD = 300; //電阻極限角度
 float gotoTargetGap = 0;  //容許定位公差
 /*----------------------------------------------------------------------------*/
@@ -122,24 +122,35 @@ void loop()
   int val7 = analogRead(A0);
   int val8 = analogRead(A1);
 
-  float degreeR = ResisToDegree(sensorR) - 150;  
   float degreeL = ResisToDegree(sensorL) - 150;
-  float targetR = compensator_Target(TargetHightR);
   float targetL = compensator_Target(TargetHightL);
 
  
   S +=  "\t高度(左): " + String(TargetHightL) +
         "\t角度(左): " + String(targetL) + "°" + 
-        "\t感測器(左): " + String(degreeL) + "°" + 
-        "\t gap: " + String(gotoTargetGap) + "°" + 
-        "\t馬達(左)-A: " + String(val) + 
-        "\t馬達(左)-B: " + String(val2) + 
-        "\t馬達(左)-PWM: " + String(pwmL);
-  SerialUSB.println(S);
+        "\t感測器(左): " + String(degreeL) + "°" 
+        "\t馬達(左)-PWM: " + String(pwmL) +        
+        "\t gap(左): " + String(gotoTargetGap) + "°";
+        
+  
 //
 
   motorMotion(motRight, ResisToDegree(sensorR) - 150, compensator_Target(TargetHightR));
   int pwmR = pwm; //實驗性檢測******
+
+//實驗性檢測******
+
+  float degreeR = ResisToDegree(sensorR) - 150;  
+  float targetR = compensator_Target(TargetHightR);
+
+S +=  "\t高度(右): " + String(TargetHightR) +
+      "\t角度(右): " + String(targetR) + "°" + 
+      "\t感測器(右): " + String(degreeR) + "°" + 
+      "\t馬達(右)-PWM: " + String(pwmR) + 
+      "\t gap(右): " + String(gotoTargetGap) + "°";
+      SerialUSB.println(S);
+
+//
 }
 /*----------------------------------------------------------------------------*/
 
@@ -203,61 +214,123 @@ String readSerialData()
 ////////////////////////////////////////////////////////
 void motorMotion(int numMot,float actualPos,float targetPos)
 {
-  float Tol = 4;
+  float Tol = 1;
   float percentVelocity = 0; //速度百分比
   float brakingDistance = 5;
+  float limitCompensateVolocityAngle = 60; //補償及縣
 
   // 分析目標位置是否超出極限，若超出則限制
-  targetPos = constrain(targetPos, potMini + brakingDistance, potMaxi - brakingDistance);
+  targetPos = constrain(targetPos, potMini + brakingDistance, potMaxi - brakingDistance); //目標位置小於最大角度
 
   actualPos = constrain(actualPos, potMini, potMaxi);  //限制角度值
   targetPos = constrain(targetPos, potMini, potMaxi);  //限制角度值
 
-  gotoTargetGap = abs(targetPos-actualPos);   //計算距離值
+  gotoTargetGap = abs(targetPos-actualPos);   //計算目標距離值
+  float stopGap = 10;   //設定煞車距離值
+  
+  ///////////////
+  //速度補償
+  ///////////////
 
-  if (gotoTargetGap<= Tol) {
+  float compensateVolocity = 0;
+  if( abs(actualPos) < limitCompensateVolocityAngle ) compensateVolocity = 100 / abs(1/sin((actualPos*PI/180)));    //補償速度
+  else compensateVolocity = 100;
+
+  //if (actualPos != 0) compensateVolocity = 100 / 10000 //位置0度防止BUG **
+  
+  if( compensateVolocity < startMotorVoltage ) //不可小於最小啟動PWM
+    compensateVolocity = startMotorVoltage;
+    
+  ///////////////
+  // PID加減速(無補償)
+  ///////////////
+
+  float stopVolocity = 0;   //煞車速度
+  if (gotoTargetGap<10)  stopVolocity=75;
+  if (gotoTargetGap<8)   stopVolocity=50;
+  if (gotoTargetGap<6)   stopVolocity=25;
+  if (gotoTargetGap<4)   stopVolocity=0;
+  
+  
+  if( gotoTargetGap < stopGap )     //進入煞車
+  {
+    if( compensateVolocity < stopVolocity )
+      percentVelocity = compensateVolocity; //使用補償速度
+    else
+      percentVelocity = stopVolocity; //使用煞車速度
+  }
+  else
+  {
+    percentVelocity = compensateVolocity; //使用補償速度
+  }
+
+  ///////////////
+  //限制PWM輸入值
+  ///////////////
+
+  
+  pwm = map((percentVelocity*1000), 0, 100000, 0, 255);  //pwm比例縮放補足馬達啟動電壓
+  
+  pwm = constrain(pwm, 0, 255);  //限制PWM輸入值
+
+  ///////////////
+  //馬達執行動作
+  ///////////////
+  //馬達超出極限範圍，將會反向調控!
+  
+  // 正轉(上)
+  
+  if ((actualPos<potMini) || (actualPos<targetPos)) motorGo(numMot, FW, pwm);
+  
+  // 反轉(下) 
+  
+  if ((actualPos>potMaxi) || (actualPos>targetPos)) motorGo(numMot, RV, pwm);
+  
+
+  
+    /*
     motorOff(numMot); //太近，必須停下
     percentVelocity = 0;
-    pwm = 0;
-  }
-  else {
-    ///////////////
-    // PID加減速
-    ///////////////
-    percentVelocity=1;
-    if (gotoTargetGap>6)   percentVelocity=25;
-    if (gotoTargetGap>8)   percentVelocity=50;
-    if (gotoTargetGap>9)   percentVelocity=75;
-    if (gotoTargetGap>10)   percentVelocity=100;
+    pwm = 0;*/
 
-    ///////////////
-    //速度補償
-    ///////////////
-    if (actualPos != 0) 
-      percentVelocity = percentVelocity / abs(1/sin((actualPos*PI/180))); 
-    else  //0度時不為0
-      percentVelocity = percentVelocity / 100;
+    /*
+      ///////////////
+      // PID加減速
+      ///////////////
+      if (gotoTargetGap>1)   percentVelocity=1;
+      if (gotoTargetGap>6)   percentVelocity=25;
+      if (gotoTargetGap>8)   percentVelocity=50;
+      if (gotoTargetGap>9)   percentVelocity=75;
+      if (gotoTargetGap>10)   percentVelocity=100;
+    if(percentVelocity != 0){
+      ///////////////
+      //速度補償
+      ///////////////
+      if (actualPos != 0) 
+        percentVelocity = percentVelocity / abs(1/sin((actualPos*PI/180))); 
+      else  //0度時不為0
+        percentVelocity = percentVelocity / 100;
+  
+      ///////////////
+      //限制PWM輸入值
+      ///////////////
+      pwm = map((percentVelocity*1000), 0, 100000, startMotorVoltage, 263);  //pwm比例縮放補足馬達啟動電壓 & 去除75度後之值(263是由試誤法得出)
+  
+      if(percentVelocity != 0)
+        pwm = constrain(pwm, startMotorVoltage, 255);  
+      else
+        pwm = constrain(pwm, 0, 255);  //限制PWM輸入值
+  
+      ///////////////
+      //馬達執行動作
+      ///////////////
+      //馬達超出極限範圍，將會反向調控!
+      // 正轉(上)
+      if ((actualPos<potMini) || (actualPos<targetPos)) motorGo(numMot, FW, pwm);
+      // 反轉(下) 
+      if ((actualPos>potMaxi) || (actualPos>targetPos)) motorGo(numMot, RV, pwm);
+    }*/
 
-    ///////////////
-    //限制PWM輸入值
-    ///////////////
-    pwm = map((percentVelocity*1000), 0, 100000, startMotorVoltage-1, 263);  //pwm比例縮放補足馬達啟動電壓 & 去除75度後之值(263是由試誤法得出)
-
-    if(pwm != 0)
-      pwm = constrain(pwm, startMotorVoltage-1, 255);  
-    else
-      pwm = constrain(pwm, 0, 255);  //限制PWM輸入值
-
-    ///////////////
-    //馬達執行動作
-    ///////////////
-    //馬達超出極限範圍，將會反向調控!
-    // 正轉(上)
-    if ((actualPos<potMini) || (actualPos<targetPos)) motorGo(numMot, FW, pwm);
-    // 反轉(下) 
-    if ((actualPos>potMaxi) || (actualPos>targetPos)) motorGo(numMot, RV, pwm);
-
-  }
 }
 //----------------------------------------------------//
 
